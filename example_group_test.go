@@ -8,9 +8,10 @@ import (
 	"os"
 
 	"github.com/spf13/pflag"
+	"github.com/tetratelabs/multierror"
+
 	"github.com/tetrateio/tetrate/pkg/run"
 	"github.com/tetrateio/tetrate/pkg/signal"
-	"github.com/tetratelabs/multierror"
 )
 
 func Example() {
