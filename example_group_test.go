@@ -22,10 +22,10 @@ func Example() {
 	)
 
 	// add our PersonService
-	g.AddService(&p)
+	g.Register(&p)
 
 	// add a SignalHandler service
-	g.AddService(&s)
+	g.Register(&s)
 
 	// Start our services and block until error or exit request.
 	// If sending a SIGINT to the process, a graceful shutdown of the
@@ -45,6 +45,10 @@ type PersonService struct {
 	age  int
 
 	closer chan error
+}
+
+func (p PersonService) Name() string {
+	return "person"
 }
 
 // FlagSet implements run.Config and thus its configuration and flag handling is

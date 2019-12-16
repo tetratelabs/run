@@ -1,16 +1,18 @@
 // Copyright (c) Tetrate, Inc 2019 All Rights Reserved.
 
-package run
+package run_test
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
-	"github.com/spf13/pflag"
 	"github.com/tetratelabs/multierror"
 
 	"github.com/tetrateio/tetrate/pkg"
+	"github.com/tetrateio/tetrate/pkg/run"
+	"github.com/tetrateio/tetrate/pkg/test/group"
 )
 
 const (
@@ -21,16 +23,23 @@ const (
 
 func TestRunGroupSvcLifeCycle(t *testing.T) {
 	var (
-		g   Group
-		s   service
-		irq = make(chan error)
+		g       run.Group
+		s       service
+		irq     = make(chan error)
+		hasName bool
 	)
 
 	// add our service to Group
-	g.AddService(&s)
+	g.Register(&s)
 
 	// add our interruptor
-	g.Add(func() error { return errIRQ }, func(error) {})
+	g.Register(&group.TestSvc{
+		SvcName: "testsvc",
+		Execute: func() error {
+			hasName = len(g.Name) > 0
+			return errIRQ
+		},
+	})
 
 	// start Group
 	go func() { irq <- g.Run("./myService", "-f", "1") }()
@@ -58,6 +67,9 @@ func TestRunGroupSvcLifeCycle(t *testing.T) {
 		if !s.gracefulStop {
 			t.Errorf("Expected graceful stop logic to run")
 		}
+		if !hasName {
+			t.Errorf("Expected valid name from env")
+		}
 	case <-time.After(100 * time.Millisecond):
 		t.Errorf("timeout")
 	}
@@ -65,7 +77,7 @@ func TestRunGroupSvcLifeCycle(t *testing.T) {
 
 func TestRunGroupMultiErrorHandling(t *testing.T) {
 	var (
-		g = Group{Name: "MyService"}
+		g = run.Group{Name: "MyService"}
 
 		err1 = errors.New("cfg1 failed")
 		err2 = errors.New("cfg2 failed")
@@ -81,7 +93,7 @@ func TestRunGroupMultiErrorHandling(t *testing.T) {
 		cfg3 = failingConfig{e: err3}
 	)
 
-	g.AddConfig(cfg1, cfg2, cfg3)
+	g.Register(cfg1, cfg2, cfg3)
 
 	if want, have := mErr.Error(), g.Run().Error(); want != have {
 		t.Errorf("invalid error payload returned:\nwant:\n%+v\nhave:\n%+v\n", want, have)
@@ -90,7 +102,6 @@ func TestRunGroupMultiErrorHandling(t *testing.T) {
 
 func TestRunGroupEarlyBailFlags(t *testing.T) {
 	var (
-		g   = Group{HelpText: "placeholder"}
 		irq = make(chan error)
 	)
 
@@ -106,6 +117,7 @@ func TestRunGroupEarlyBailFlags(t *testing.T) {
 		{flag: "--help"},
 		{flag: "--non-existent", hasErr: true},
 	} {
+		g := run.Group{HelpText: "placeholder"}
 
 		// start Group
 		go func() { irq <- g.Run("./myService", tt.flag) }()
@@ -126,17 +138,20 @@ func TestRunGroupEarlyBailFlags(t *testing.T) {
 
 func TestDuplicateFlag(t *testing.T) {
 	var (
-		g     Group
+		g     run.Group
 		flag1 flagTestConfig
 		flag2 flagTestConfig
 		irq   = make(chan error)
 	)
 
 	// add our flags
-	g.AddConfig(&flag1, &flag2)
+	g.Register(&flag1, &flag2)
 
 	// add our interruptor
-	g.Add(func() error { return errIRQ }, func(error) {})
+	g.Register(&group.TestSvc{
+		SvcName: "irqsvc",
+		Execute: func() error { return errIRQ },
+	})
 
 	// start Group
 	go func() { irq <- g.Run("./myService", "-f", "3") }()
@@ -161,8 +176,12 @@ type flagTestConfig struct {
 	value int
 }
 
-func (f *flagTestConfig) FlagSet() *pflag.FlagSet {
-	flags := pflag.NewFlagSet("flag test config", pflag.ContinueOnError)
+func (f flagTestConfig) Name() string {
+	return fmt.Sprintf("flagtest%d", f.value)
+}
+
+func (f *flagTestConfig) FlagSet() *run.FlagSet {
+	flags := run.NewFlagSet("flag test config")
 	flags.IntVarP(&f.value, "flagtest", "f", 10, "flagtester")
 	return flags
 }
@@ -173,7 +192,11 @@ type failingConfig struct {
 	e error
 }
 
-func (f failingConfig) FlagSet() *pflag.FlagSet { return nil }
+func (f failingConfig) Name() string {
+	return f.e.Error()
+}
+
+func (f failingConfig) FlagSet() *run.FlagSet { return nil }
 
 func (f failingConfig) Validate() error { return f.e }
 
@@ -187,9 +210,13 @@ type service struct {
 	closer       chan error
 }
 
-func (s *service) FlagSet() *pflag.FlagSet {
+func (s service) Name() string {
+	return "testsvc"
+}
+
+func (s *service) FlagSet() *run.FlagSet {
 	s.flagSet = true
-	flags := pflag.NewFlagSet("dummy flagset", pflag.ContinueOnError)
+	flags := run.NewFlagSet("dummy flagset")
 	flags.IntVarP(&s.configItem, "flagtest", "f", 5, "rungroup flagset test")
 	return flags
 }
