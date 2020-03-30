@@ -227,9 +227,10 @@ func (g *Group) RunConfig(args ...string) (err error) {
 
 	// register default rungroup flags
 	var (
-		name        string
-		showHelp    bool
-		showVersion bool
+		name         string
+		showHelp     bool
+		showVersion  bool
+		showRunGroup bool
 	)
 
 	gFS := NewFlagSet("Common Service options")
@@ -239,6 +240,8 @@ func (g *Group) RunConfig(args ...string) (err error) {
 		"show version information and exit.")
 	gFS.BoolVarP(&showHelp, "help", "h", false,
 		"show this help information and exit.")
+	gFS.BoolVar(&showRunGroup, "show-rungroup-units", false, "show rungroup units")
+	_ = gFS.MarkHidden("show-rungroup-units")
 	g.f.AddFlagSet(gFS.FlagSet)
 
 	// default to os.Args if args parameter was omitted
@@ -303,6 +306,9 @@ func (g *Group) RunConfig(args ...string) (err error) {
 		return ErrBailEarlyRequest
 	case showVersion:
 		version.Show(g.Name)
+		return ErrBailEarlyRequest
+	case showRunGroup:
+		fmt.Println(g.ListUnits())
 		return ErrBailEarlyRequest
 	}
 
