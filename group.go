@@ -180,6 +180,48 @@ func (g *Group) Register(units ...Unit) []bool {
 	return hasRegistered
 }
 
+// Deregister will inspect the provided objects implementing the Unit interface
+// to see if it needs to de-register the objects for any of the Group bootstrap
+// phases.
+// The returned array of booleans is of the same size as the amount of provided
+// Units, signalling for each provided Unit if it successfully de-registered
+// with Group for at least one of the bootstrap phases or if it was ignored.
+// It is generally safe to use Deregister at any bootstrap phase except at Serve
+// time (when it will have no effect).
+// WARNING: Dependencies between Units can cause a crash as a dependent Unit
+// might expect the other Unit to gone through all the needed bootstrapping
+// phases.
+func (g *Group) Deregister(units ...Unit) []bool {
+	hasDeregistered := make([]bool, len(units))
+	for idx := range units {
+		for i := range g.n {
+			if g.n[i] != nil && g.n[i].(Unit) == units[idx] {
+				g.n[i] = nil // can't resize slice during Run, so nil
+				hasDeregistered[idx] = true
+			}
+		}
+		for i := range g.c {
+			if g.c[i] != nil && g.c[i].(Unit) == units[idx] {
+				g.c[i] = nil // can't resize slice during Run, so nil
+				hasDeregistered[idx] = true
+			}
+		}
+		for i := range g.p {
+			if g.p[i] != nil && g.p[i].(Unit) == units[idx] {
+				g.p[i] = nil // can't resize slice during Run, so nil
+				hasDeregistered[idx] = true
+			}
+		}
+		for i := range g.s {
+			if g.s[i] != nil && g.s[i].(Unit) == units[idx] {
+				g.s[i] = nil // can't resize slice during Run, so nil
+				hasDeregistered[idx] = true
+			}
+		}
+	}
+	return hasDeregistered
+}
+
 // RunConfig runs the Config phase of all registered Config aware Units.
 // Only use this function if needing to add additional wiring between config
 // and (pre)run phases and a separate PreRunner phase is not an option.
@@ -257,7 +299,10 @@ func (g *Group) RunConfig(args ...string) (err error) {
 
 	// inform all Units implementing Namer of the parsed Group name
 	for _, n := range g.n {
-		n.GroupName(g.Name)
+		if n != nil {
+			// a namer might have been deregistered
+			n.GroupName(g.Name)
+		}
 	}
 
 	// register logging configuration
@@ -267,6 +312,10 @@ func (g *Group) RunConfig(args ...string) (err error) {
 	// register flags from attached Config objects
 	fs := make([]*FlagSet, len(g.c))
 	for idx := range g.c {
+		if g.c[idx] == nil {
+			// a namer might have been deregistered
+			continue
+		}
 		g.log.Debugf("register flags: %s (%d/%d)", g.c[idx].Name(), idx+1, len(g.c))
 		fs[idx] = g.c[idx].FlagSet()
 		if fs[idx] == nil {
@@ -320,6 +369,11 @@ func (g *Group) RunConfig(args ...string) (err error) {
 
 	// Validate Config inputs
 	for idx := range g.c {
+		if g.c[idx] == nil {
+			// a config might have been deregistered during Run
+			g.log.Debugf("skipping validate: %d", idx)
+			continue
+		}
 		g.log.Debugf("validate config: %s (%d/%d)", g.c[idx].Name(), idx+1, len(g.c))
 		if vErr := g.c[idx].Validate(); vErr != nil {
 			err = multierror.Append(err, vErr)
@@ -388,6 +442,10 @@ func (g *Group) Run(args ...string) (err error) {
 
 	// execute pre run stage and exit on error
 	for idx := range g.p {
+		if g.p[idx] == nil {
+			// a prerunner might have been deregistered during Run
+			continue
+		}
 		g.log.Debugf("pre-run: %s (%d/%d)", g.p[idx].Name(), idx+1, len(g.p))
 		if err := g.p[idx].PreRun(); err != nil {
 			return err
@@ -397,6 +455,10 @@ func (g *Group) Run(args ...string) (err error) {
 	// feed our registered services to our internal run.Group
 	for idx := range g.s {
 		s := g.s[idx]
+		if s == nil {
+			// a service might have been deregistered during Run
+			continue
+		}
 		g.log.Debugf("serve: %s (%d/%d)", s.Name(), idx+1, len(g.s))
 		g.r.Add(func() error {
 			return s.Serve()
@@ -413,28 +475,35 @@ func (g *Group) Run(args ...string) (err error) {
 // ListUnits returns a list of all Group phases and the Units registered to each
 // of them.
 func (g Group) ListUnits() string {
-	var s, t string
+	var (
+		s string
+		t = "cli"
+	)
 
 	if len(g.c) > 0 {
 		s += "\n- config: "
 		for _, u := range g.c {
-			s += u.Name() + " "
+			if u != nil {
+				s += u.Name() + " "
+			}
 		}
 	}
 	if len(g.p) > 0 {
 		s += "\n- prerun: "
 		for _, u := range g.p {
-			s += u.Name() + " "
+			if u != nil {
+				s += u.Name() + " "
+			}
 		}
 	}
 	if len(g.s) > 0 {
 		s += "\n- serve : "
 		for _, u := range g.s {
-			s += u.Name() + " "
+			if u != nil {
+				t = "svc"
+				s += u.Name() + " "
+			}
 		}
-		t = "svc"
-	} else {
-		t = "cli"
 	}
 
 	return fmt.Sprintf("Group: %s [%s]%s", g.Name, t, s)

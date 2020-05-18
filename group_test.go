@@ -5,6 +5,7 @@ package run_test
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -172,6 +173,128 @@ func TestDuplicateFlag(t *testing.T) {
 	}
 }
 
+func TestRuntimeDeregister(t *testing.T) {
+	for _, svcs := range [][]string{
+		[]string{"--s1-disable"},
+		[]string{"--s2-disable"},
+		[]string{"--s1-disable", "--s2-disable"},
+	} {
+		for _, phase := range []string{"config", "prerunner", "service"} {
+			var (
+				g          run.Group
+				s1, s2, s3 service
+				d1, d2     bool
+				disabler   disablerService
+				irq        = make(chan error)
+				idx        = fmt.Sprintf("%s(%s)", phase, strings.Join(svcs, ","))
+			)
+
+			s1.customFlags = run.NewFlagSet("s1-disabler")
+			s1.customFlags.BoolVar(&d1, "s1-disable", false, "disable service 1")
+			s1.configItem = 1
+			s2.customFlags = run.NewFlagSet("s2-disabler")
+			s2.customFlags.BoolVar(&d2, "s2-disable", false, "disable service 2")
+			s2.configItem = 1
+
+			g.Register(&disabler, &s1, &s2, &s3)
+			g.Deregister(&s3) // make sure we also handle deregister before calling Run
+
+			switch phase {
+			case "config":
+				disabler.config = func() {
+					if d1 {
+						if dereg := g.Deregister(&s1); dereg[0] == false {
+							t.Errorf("%s: deregister want: true, have: %t", idx, dereg[0])
+						}
+						s1.disabled.config = true
+						s1.disabled.preRun = true
+						s1.disabled.serve = true
+					}
+					if d2 {
+						if dereg := g.Deregister(&s2); dereg[0] == false {
+							t.Errorf("%s: deregister want: true, have: %t", idx, dereg[0])
+						}
+						s2.disabled.config = true
+						s2.disabled.preRun = true
+						s2.disabled.serve = true
+					}
+				}
+			case "prerunner":
+				disabler.prerunner = func() {
+					if d1 {
+						if dereg := g.Deregister(&s1); dereg[0] == false {
+							t.Errorf("%s: deregister want: true, have: %t", idx, dereg[0])
+						}
+						s1.disabled.preRun = true
+						s1.disabled.serve = true
+					}
+					if d2 {
+						if dereg := g.Deregister(&s2); dereg[0] == false {
+							t.Errorf("%s: deregister want: true, have: %t", idx, dereg[0])
+						}
+						s2.disabled.preRun = true
+						s2.disabled.serve = true
+					}
+				}
+			case "service":
+				g.Register(run.NewPreRunner("service-disabler", func() error {
+					if d1 {
+						if dereg := g.Deregister(&s1); dereg[0] == false {
+							t.Errorf("%s: deregister want: true, have: %t", idx, dereg[0])
+						}
+						s1.disabled.serve = true
+					}
+					if d2 {
+						if dereg := g.Deregister(&s2); dereg[0] == false {
+							t.Errorf("%s: deregister want: true, have: %t", idx, dereg[0])
+						}
+						s2.disabled.serve = true
+					}
+					return nil
+				}))
+			}
+
+			g.Register(&group.TestSvc{
+				SvcName: "testsvc",
+				Execute: func() error { return errIRQ },
+			})
+
+			// start Group
+			go func() { irq <- g.Run(append([]string{"./myService"}, svcs...)...) }()
+
+			select {
+			case err := <-irq:
+				if err != errIRQ {
+					t.Errorf("Expected proper close, got %v", err)
+				}
+
+				if want, have := !s1.disabled.config, s1.validated; want != have {
+					t.Errorf("%s: s1 config want: %t, have: %t", idx, want, have)
+				}
+				if want, have := !s1.disabled.preRun, s1.preRun; want != have {
+					t.Errorf("%s: s1 prerun want: %t, have: %t", idx, want, have)
+				}
+				if want, have := !s1.disabled.serve, s1.serve && s1.gracefulStop; want != have {
+					t.Errorf("%s: s1 serve want: %t, have: %t", idx, want, have)
+				}
+				if want, have := !s2.disabled.config, s2.validated; want != have {
+					t.Errorf("%s: s2 config want: %t, have: %t", idx, want, have)
+				}
+				if want, have := !s2.disabled.preRun, s2.preRun; want != have {
+					t.Errorf("%s: s2 prerun want: %t, have: %t", idx, want, have)
+				}
+				if want, have := !s2.disabled.serve, s2.serve && s2.gracefulStop; want != have {
+					t.Errorf("%s: s2 serve want: %t, have: %t", idx, want, have)
+				}
+
+			case <-time.After(100 * time.Millisecond):
+				t.Errorf("timeout")
+			}
+
+		}
+	}
+}
+
 type flagTestConfig struct {
 	value int
 }
@@ -207,7 +330,13 @@ type service struct {
 	preRun       bool
 	serve        bool
 	gracefulStop bool
-	closer       chan error
+	disabled     struct {
+		config bool
+		preRun bool
+		serve  bool
+	}
+	closer      chan error
+	customFlags *run.FlagSet
 }
 
 func (s service) Name() string {
@@ -216,6 +345,9 @@ func (s service) Name() string {
 
 func (s *service) FlagSet() *run.FlagSet {
 	s.flagSet = true
+	if s.customFlags != nil {
+		return s.customFlags
+	}
 	flags := run.NewFlagSet("dummy flagset")
 	flags.IntVarP(&s.configItem, "flagtest", "f", 5, "rungroup flagset test")
 	return flags
@@ -247,4 +379,39 @@ func (s *service) Serve() error {
 
 func (s *service) GracefulStop() {
 	s.closer <- errClose
+}
+
+var (
+	_ run.Unit      = (*disablerService)(nil)
+	_ run.Config    = (*disablerService)(nil)
+	_ run.PreRunner = (*disablerService)(nil)
+)
+
+type disablerService struct {
+	q         chan error
+	config    func()
+	prerunner func()
+}
+
+func (d disablerService) Name() string {
+	return "disablerService"
+}
+
+func (d disablerService) FlagSet() *run.FlagSet {
+	return run.NewFlagSet("dummy flagset")
+}
+
+func (d *disablerService) Validate() error {
+	d.q = make(chan error)
+	if d.config != nil {
+		d.config()
+	}
+	return nil
+}
+
+func (d *disablerService) PreRun() error {
+	if d.prerunner != nil {
+		d.prerunner()
+	}
+	return nil
 }
