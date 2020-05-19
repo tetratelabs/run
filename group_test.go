@@ -50,6 +50,12 @@ func TestRunGroupSvcLifeCycle(t *testing.T) {
 		if err != errIRQ {
 			t.Errorf("Expected proper close, got %v", err)
 		}
+		if s.groupName != g.Name {
+			t.Error("Expected namer logic to run")
+		}
+		if s.initializer < 1 {
+			t.Error("Expected initializer logic to run")
+		}
 		if !s.flagSet {
 			t.Error("Expected flagSet logic to run")
 		}
@@ -323,8 +329,19 @@ func (f failingConfig) FlagSet() *run.FlagSet { return nil }
 
 func (f failingConfig) Validate() error { return f.e }
 
+var (
+	_ run.Unit        = (*service)(nil)
+	_ run.Initializer = (*service)(nil)
+	_ run.Namer       = (*service)(nil)
+	_ run.Config      = (*service)(nil)
+	_ run.PreRunner   = (*service)(nil)
+	_ run.Service     = (*service)(nil)
+)
+
 type service struct {
 	configItem   int
+	groupName    string
+	initializer  int
 	flagSet      bool
 	validated    bool
 	preRun       bool
@@ -341,6 +358,14 @@ type service struct {
 
 func (s service) Name() string {
 	return "testsvc"
+}
+
+func (s *service) GroupName(name string) {
+	s.groupName = name
+}
+
+func (s *service) Initialize() {
+	s.initializer++
 }
 
 func (s *service) FlagSet() *run.FlagSet {

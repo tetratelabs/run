@@ -55,6 +55,17 @@ type Unit interface {
 	Name() string
 }
 
+// Initializer is an extension interface that Units can implement if they need
+// to have certain properties initialized after creation but before any of the
+// other lifecycle phases such as Config, PreRunner and/or Serve are run.
+// Note, since an Initializer is a public function, make sure it is safe to be
+// called multiple times.
+type Initializer interface {
+	// implements Unit for Group registration and identification
+	Unit
+	Initialize()
+}
+
 // Namer is an extension interface that Units can implement if they need to know
 // or want to use the Group.Name. Since Group's name can be updated at runtime
 // by the -n flag, Group first parses its own FlagSet the know if its Name needs
@@ -137,6 +148,7 @@ type Group struct {
 
 	f   *FlagSet
 	r   run.Group
+	i   []Initializer
 	n   []Namer
 	c   []Config
 	p   []PreRunner
@@ -156,6 +168,10 @@ type Group struct {
 func (g *Group) Register(units ...Unit) []bool {
 	hasRegistered := make([]bool, len(units))
 	for idx := range units {
+		if i, ok := units[idx].(Initializer); ok {
+			g.i = append(g.i, i)
+			hasRegistered[idx] = true
+		}
 		if !g.configured {
 			// if RunConfig has been called we can no longer register Config
 			// phases of Units
@@ -194,6 +210,12 @@ func (g *Group) Register(units ...Unit) []bool {
 func (g *Group) Deregister(units ...Unit) []bool {
 	hasDeregistered := make([]bool, len(units))
 	for idx := range units {
+		for i := range g.i {
+			if g.i[i] != nil && g.i[i].(Unit) == units[idx] {
+				g.i[i] = nil // can't resize slice during Run, so nil
+				hasDeregistered[idx] = true
+			}
+		}
 		for i := range g.n {
 			if g.n[i] != nil && g.n[i].(Unit) == units[idx] {
 				g.n[i] = nil // can't resize slice during Run, so nil
@@ -297,10 +319,20 @@ func (g *Group) RunConfig(args ...string) (err error) {
 		g.Name = name
 	}
 
+	// initialize all Units implementing Initializer
+	for idx, i := range g.i {
+		// an Initializer might have been deregistered
+		if i != nil {
+			i.Initialize()
+			// don't call in Run phase again
+			g.i[idx] = nil
+		}
+	}
+
 	// inform all Units implementing Namer of the parsed Group name
 	for _, n := range g.n {
+		// a Namer might have been deregistered
 		if n != nil {
-			// a namer might have been deregistered
 			n.GroupName(g.Name)
 		}
 	}
@@ -312,8 +344,8 @@ func (g *Group) RunConfig(args ...string) (err error) {
 	// register flags from attached Config objects
 	fs := make([]*FlagSet, len(g.c))
 	for idx := range g.c {
+		// a Namer might have been deregistered
 		if g.c[idx] == nil {
-			// a namer might have been deregistered
 			continue
 		}
 		g.log.Debugf("register flags: %s (%d/%d)", g.c[idx].Name(), idx+1, len(g.c))
@@ -369,8 +401,8 @@ func (g *Group) RunConfig(args ...string) (err error) {
 
 	// Validate Config inputs
 	for idx := range g.c {
+		// a Config might have been deregistered during Run
 		if g.c[idx] == nil {
-			// a config might have been deregistered during Run
 			g.log.Debugf("skipping validate: %d", idx)
 			continue
 		}
@@ -399,6 +431,9 @@ func (g *Group) RunConfig(args ...string) (err error) {
 // skipped and Run continues with the PreRunner and Service phases.
 //
 // The following phases are executed in the following sequence:
+//
+//   Initialization phase (serially, in order of Unit registration)
+//     - Initialize()     Initialize Unit's supporting this interface.
 //
 //   Config phase (serially, in order of Unit registration)
 //     - FlagSet()        Get & register all FlagSets from Config Units.
@@ -440,10 +475,20 @@ func (g *Group) Run(args ...string) (err error) {
 		}
 	}()
 
+	// call our Initializer (again)
+	// In case a Unit was registered for PreRun and/or Serve phase after Config
+	// phase was completed, we still want to run the Initializer if existent.
+	for _, i := range g.i {
+		// an Initializer might have been deregistered
+		if i != nil {
+			i.Initialize()
+		}
+	}
+
 	// execute pre run stage and exit on error
 	for idx := range g.p {
+		// a PreRunner might have been deregistered during Run
 		if g.p[idx] == nil {
-			// a prerunner might have been deregistered during Run
 			continue
 		}
 		g.log.Debugf("pre-run: %s (%d/%d)", g.p[idx].Name(), idx+1, len(g.p))
@@ -455,8 +500,8 @@ func (g *Group) Run(args ...string) (err error) {
 	// feed our registered services to our internal run.Group
 	for idx := range g.s {
 		s := g.s[idx]
+		// a Service might have been deregistered
 		if s == nil {
-			// a service might have been deregistered during Run
 			continue
 		}
 		g.log.Debugf("serve: %s (%d/%d)", s.Name(), idx+1, len(g.s))
@@ -480,6 +525,14 @@ func (g Group) ListUnits() string {
 		t = "cli"
 	)
 
+	if len(g.i) > 0 {
+		s += "\n - initialize: "
+		for _, u := range g.i {
+			if u != nil {
+				s += u.Name() + " "
+			}
+		}
+	}
 	if len(g.c) > 0 {
 		s += "\n- config: "
 		for _, u := range g.c {
