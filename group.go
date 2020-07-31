@@ -154,8 +154,10 @@ type Group struct {
 	p   []PreRunner
 	s   []Service
 	log *l.Scope
+	h   *healthService
 
-	configured bool
+	configured   bool
+	hsRegistered bool
 }
 
 // Register will inspect the provided objects implementing the Unit interface to
@@ -255,6 +257,12 @@ func (g *Group) Deregister(units ...Unit) []bool {
 // is not an actual error but a request for Help, Version or other task that has
 // been finished and there is no more work left to handle.
 func (g *Group) RunConfig(args ...string) (err error) {
+	// Implicitly register Health Check Service before running configs
+	if !g.hsRegistered {
+		g.h = &healthService{}
+		g.hsRegistered = g.Register(g.h)[0]
+	}
+
 	g.configured = true
 
 	if g.Name == "" {
@@ -499,11 +507,14 @@ func (g *Group) Run(args ...string) (err error) {
 
 	// feed our registered services to our internal run.Group
 	for idx := range g.s {
+		// a Service might have been deregistered during Run
 		s := g.s[idx]
-		// a Service might have been deregistered
 		if s == nil {
 			continue
 		}
+		// register health checkers
+		g.h.register(s)
+
 		g.log.Debugf("serve: %s (%d/%d)", s.Name(), idx+1, len(g.s))
 		g.r.Add(func() error {
 			return s.Serve()
