@@ -24,7 +24,8 @@ const (
 
 func TestRunGroupSvcLifeCycle(t *testing.T) {
 	var (
-		g       run.Group
+		// We do not want to start the health service and its HTTP listener in this test
+		g       = run.Group{DisableHealthService: true}
 		s       service
 		irq     = make(chan error)
 		hasName bool
@@ -145,7 +146,8 @@ func TestRunGroupEarlyBailFlags(t *testing.T) {
 
 func TestDuplicateFlag(t *testing.T) {
 	var (
-		g     run.Group
+		// We do not want to start the health service and its HTTP listener in this test
+		g     = run.Group{DisableHealthService: true}
 		flag1 flagTestConfig
 		flag2 flagTestConfig
 		irq   = make(chan error)
@@ -181,13 +183,14 @@ func TestDuplicateFlag(t *testing.T) {
 
 func TestRuntimeDeregister(t *testing.T) {
 	for _, svcs := range [][]string{
-		[]string{"--s1-disable"},
-		[]string{"--s2-disable"},
-		[]string{"--s1-disable", "--s2-disable"},
+		{"--s1-disable"},
+		{"--s2-disable"},
+		{"--s1-disable", "--s2-disable"},
 	} {
 		for _, phase := range []string{"config", "prerunner", "service"} {
 			var (
-				g          run.Group
+				// We do not want to start the health service and its HTTP listener in this test
+				g          = run.Group{DisableHealthService: true}
 				s1, s2, s3 service
 				d1, d2     bool
 				disabler   disablerService

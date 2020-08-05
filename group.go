@@ -156,6 +156,15 @@ type Group struct {
 	log *l.Scope
 	h   *healthService
 
+	// DisableHealthService will disable the health service for this run group.
+	// By default, run group will install a health service listening in a HTTP
+	// endpoint to provide health status information for all registered services
+	// and the group itself.
+	// This flag can be used to turn this off and do not register the health
+	// service. It has to be set at group creation, before calling `Run` or any
+	// of the group execution phases.
+	DisableHealthService bool
+
 	configured   bool
 	hsRegistered bool
 }
@@ -258,7 +267,7 @@ func (g *Group) Deregister(units ...Unit) []bool {
 // been finished and there is no more work left to handle.
 func (g *Group) RunConfig(args ...string) (err error) {
 	// Implicitly register Health Check Service before running configs
-	if !g.hsRegistered {
+	if !g.hsRegistered && !g.DisableHealthService {
 		g.h = &healthService{}
 		g.hsRegistered = g.Register(g.h)[0]
 	}
