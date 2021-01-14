@@ -1,4 +1,4 @@
-// Copyright (c) Tetrate, Inc 2020 All Rights Reserved.
+// Copyright (c) Tetrate, Inc 2021 All Rights Reserved.
 
 // Package run implements an actor-runner with deterministic teardown.
 // It uses the https://github.com/oklog/run/ package as its basis and enhances
