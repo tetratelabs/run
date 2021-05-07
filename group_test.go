@@ -359,7 +359,7 @@ type service struct {
 	customFlags *run.FlagSet
 }
 
-func (s service) Name() string {
+func (s *service) Name() string {
 	return "testsvc"
 }
 

@@ -121,14 +121,15 @@ func TestHealthServiceStatus(t *testing.T) {
 			if err := h.PreRun(); err != nil {
 				t.Fatalf("could not initialize health check service for test. Error: %v", err)
 			}
-			go func() { _ = h.Serve() }()
-
-			c := l.HTTPClient()
 
 			// register test case services
 			for _, hcs := range tc.services {
 				h.register(hcs)
 			}
+
+			go func() { _ = h.Serve() }()
+
+			c := l.HTTPClient()
 
 			resp, err := c.Get("http://localhost:9009/health")
 			if err != nil {
