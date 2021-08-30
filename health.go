@@ -49,7 +49,7 @@ type (
 )
 
 // Name implements run.Unit.
-func (healthService) Name() string {
+func (*healthService) Name() string {
 	return "health"
 }
 
