@@ -510,7 +510,7 @@ func (g *Group) Run(args ...string) (err error) {
 		}
 		g.log.Debugf("pre-run: %s (%d/%d)", g.p[idx].Name(), idx+1, len(g.p))
 		if err := g.p[idx].PreRun(); err != nil {
-			return err
+			return fmt.Errorf("pre-run %s: %w", g.p[idx].Name(), err)
 		}
 	}
 

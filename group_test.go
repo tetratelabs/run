@@ -144,6 +144,28 @@ func TestRunGroupEarlyBailFlags(t *testing.T) {
 	}
 }
 
+func TestRunPreRunFailure(t *testing.T) {
+	var (
+		e   = errors.New("prerun failed")
+		irq = make(chan error)
+		pr  = failingPreRun{e: e}
+		g   = run.Group{Name: "PreRunFail"}
+	)
+
+	g.Register(pr)
+
+	go func() { irq <- g.Run() }()
+
+	select {
+	case err := <-irq:
+		if !pkg.HasError(err, e) {
+			t.Errorf("Expected %v, got %v", e, err)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Errorf("timeout")
+	}
+}
+
 func TestDuplicateFlag(t *testing.T) {
 	var (
 		// We do not want to start the health service and its HTTP listener in this test
@@ -331,6 +353,13 @@ func (f failingConfig) Name() string {
 func (f failingConfig) FlagSet() *run.FlagSet { return nil }
 
 func (f failingConfig) Validate() error { return f.e }
+
+type failingPreRun struct {
+	e error
+}
+
+func (f failingPreRun) Name() string  { return f.e.Error() }
+func (f failingPreRun) PreRun() error { return f.e }
 
 var (
 	_ run.Unit        = (*service)(nil)
