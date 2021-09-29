@@ -512,6 +512,9 @@ func (g *Group) Run(args ...string) (err error) {
 		if err := g.p[idx].PreRun(); err != nil {
 			return fmt.Errorf("pre-run %s: %w", g.p[idx].Name(), err)
 		}
+
+		// register health checkers of pre-run Units
+		g.h.register(g.p[idx])
 	}
 
 	// feed our registered services to our internal run.Group

@@ -177,9 +177,76 @@ func TestHealthService_MarshallErrorRespectsModel(t *testing.T) {
 	}
 }
 
-var (
-	_ health.Checker = (*testChecker)(nil)
-)
+func TestHealthService_Registration(t *testing.T) {
+	// set up health checker
+	l := tnet.InMemoryListener()
+	h := &healthService{
+		address:  "localhost:9009",
+		endpoint: "/health",
+		listen: func() (net.Listener, error) {
+			return l, nil
+		},
+	}
+
+	t.Cleanup(func() {
+		h.GracefulStop()
+	})
+
+	service := testService{
+		testChecker: testChecker{name: "service", serviceStatus: health.Running},
+		started:     make(chan struct{}),
+		done:        make(chan struct{}),
+	}
+	// manually register the hs in order to be able to use in memory listener
+	g := &Group{h: h, hsRegistered: true}
+	g.Register(
+		h,
+		testPreRun{testChecker: testChecker{name: "prerunner", serviceStatus: health.Running}},
+		testPreRun{testChecker: testChecker{name: "prerunner-2", serviceStatus: health.Failing}},
+		service,
+	)
+
+	// start the run.Group lifecycle
+	go func() { _ = g.Run() }()
+
+	// make sure all services are running, they start consecutively
+	<-service.started
+
+	c := l.HTTPClient()
+	resp, err := c.Get("http://localhost:9009/health")
+	if err != nil {
+		t.Fatalf("Unexpected error performing health request: %v", err)
+	}
+	if resp.StatusCode != 503 { // Partial Service Failures
+		t.Fatalf("GET /health = %d, want 503", resp.StatusCode)
+	}
+
+	var body []byte
+	if body, err = ioutil.ReadAll(resp.Body); err != nil {
+		t.Fatalf("Unexpected error reading body response: %v", err)
+	}
+
+	var got health.Status
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("Unexpected error unmarshalling body response: %v", err)
+	}
+
+	expected := health.Status{
+		Code: health.Partial,
+		Services: map[string]health.ServiceStatus{
+			"health":      {Code: health.Running},
+			"prerunner":   {Code: health.Running},
+			"prerunner-2": {Code: health.Failing},
+			"service":     {Code: health.Running},
+		},
+	}
+
+	if diff := cmp.Diff(expected, got); diff != "" {
+		t.Errorf("Health status payload does not match (-want,+got): %s", diff)
+	}
+}
+
+var _ health.Checker = (*testChecker)(nil)
 
 type testChecker struct {
 	name          string
@@ -189,4 +256,32 @@ type testChecker struct {
 func (t testChecker) Name() string { return t.name }
 func (t testChecker) Health() health.ServiceStatus {
 	return health.ServiceStatus{Code: t.serviceStatus}
+}
+
+var _ PreRunner = (*testPreRun)(nil)
+
+type testPreRun struct {
+	testChecker
+}
+
+func (t testPreRun) PreRun() error {
+	return nil
+}
+
+var _ Service = (*testService)(nil)
+
+type testService struct {
+	testChecker
+	started chan struct{}
+	done    chan struct{}
+}
+
+func (t testService) Serve() error {
+	close(t.started)
+	<-t.done
+	return nil
+}
+
+func (t testService) GracefulStop() {
+	close(t.done)
 }

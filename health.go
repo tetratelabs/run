@@ -56,7 +56,11 @@ func (*healthService) Name() string {
 // PreRun implements run.PreRunner.
 func (s *healthService) PreRun() error {
 	s.status.Store(health.Initializing)
-	s.checkers = make(map[string]health.Checker)
+	// units can be registered before health PreRun phase (this method),
+	// do not clear them in that case.
+	if s.checkers == nil {
+		s.checkers = make(map[string]health.Checker)
+	}
 	if s.listen == nil {
 		s.listen = func() (net.Listener, error) {
 			return net.Listen("tcp", s.address)
@@ -96,6 +100,16 @@ func (s healthService) Validate() error {
 
 // Register takes a unit and if it implements health.Checker then saves it to track its health status
 func (s *healthService) register(u Unit) {
+	// safe check to avoid failures in test disabling the health check service
+	if s == nil {
+		return
+	}
+
+	if s.checkers == nil {
+		// units can be registered before health PreRun phase
+		s.checkers = make(map[string]health.Checker)
+	}
+
 	if c, ok := u.(health.Checker); ok {
 		s.checkers[u.Name()] = c
 		log.Debugf("Health checker %q (%T) registered", u.Name(), c)
@@ -120,6 +134,7 @@ func (s *healthService) Serve() error {
 
 	log.Infof("Starting Health Check Service at %s%s", s.address, s.endpoint)
 	s.status.Store(health.Running)
+
 	return s.server.Serve(listener)
 }
 
