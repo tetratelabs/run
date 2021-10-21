@@ -66,6 +66,11 @@ func (s *healthService) PreRun() error {
 			return net.Listen("tcp", s.address)
 		}
 	}
+
+	m := http.NewServeMux()
+	m.Handle(s.endpoint, s)
+	s.server = &http.Server{Handler: m}
+
 	return nil
 }
 
@@ -121,10 +126,6 @@ func (s *healthService) register(u Unit) {
 // Starts a server exposing the `/health` path to get access to the health status of the service.
 func (s *healthService) Serve() error {
 	log.Debugf("%d health checkers registered", len(s.checkers))
-
-	m := http.NewServeMux()
-	m.Handle(s.endpoint, s)
-	s.server = &http.Server{Handler: m}
 
 	listener, err := s.listen()
 	if err != nil {
