@@ -1,4 +1,16 @@
-// Copyright (c) Tetrate, Inc 2021 All Rights Reserved.
+// Copyright (c) Tetrate, Inc 2021.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package run_test
 
@@ -11,21 +23,19 @@ import (
 
 	"github.com/tetratelabs/multierror"
 
-	"github.com/tetrateio/tetrate/pkg"
-	"github.com/tetrateio/tetrate/pkg/run"
-	"github.com/tetrateio/tetrate/pkg/test/group"
+	"github.com/tetratelabs/run"
+	"github.com/tetratelabs/run/pkg/test"
 )
 
-const (
-	errFlags = pkg.Error("flagset error")
-	errClose = pkg.Error("requested close")
-	errIRQ   = pkg.Error("interrupt")
+var (
+	errFlags = errors.New("flagset error")
+	errClose = errors.New("requested close")
+	errIRQ   = errors.New("interrupt")
 )
 
 func TestRunGroupSvcLifeCycle(t *testing.T) {
 	var (
-		// We do not want to start the health service and its HTTP listener in this test
-		g       = run.Group{DisableHealthService: true}
+		g       = run.Group{}
 		s       service
 		irq     = make(chan error)
 		hasName bool
@@ -34,8 +44,8 @@ func TestRunGroupSvcLifeCycle(t *testing.T) {
 	// add our service to Group
 	g.Register(&s)
 
-	// add our interruptor
-	g.Register(&group.TestSvc{
+	// add our interrupter
+	g.Register(&test.TestSvc{
 		SvcName: "testsvc",
 		Execute: func() error {
 			hasName = len(g.Name) > 0
@@ -109,16 +119,12 @@ func TestRunGroupMultiErrorHandling(t *testing.T) {
 }
 
 func TestRunGroupEarlyBailFlags(t *testing.T) {
-	var (
-		irq = make(chan error)
-	)
+	var irq = make(chan error)
 
-	type test struct {
+	for idx, tt := range []struct {
 		flag   string
 		hasErr bool
-	}
-
-	for idx, tt := range []test{
+	}{
 		{flag: "-v"},
 		{flag: "-h"},
 		{flag: "--version"},
@@ -146,7 +152,7 @@ func TestRunGroupEarlyBailFlags(t *testing.T) {
 
 func TestRunPreRunFailure(t *testing.T) {
 	var (
-		e   = errors.New("prerun failed")
+		e   = errors.New("preRun failed")
 		irq = make(chan error)
 		pr  = failingPreRun{e: e}
 		g   = run.Group{Name: "PreRunFail"}
@@ -158,7 +164,7 @@ func TestRunPreRunFailure(t *testing.T) {
 
 	select {
 	case err := <-irq:
-		if !pkg.HasError(err, e) {
+		if !test.HasError(err, e) {
 			t.Errorf("Expected %v, got %v", e, err)
 		}
 	case <-time.After(100 * time.Millisecond):
@@ -168,8 +174,7 @@ func TestRunPreRunFailure(t *testing.T) {
 
 func TestDuplicateFlag(t *testing.T) {
 	var (
-		// We do not want to start the health service and its HTTP listener in this test
-		g     = run.Group{DisableHealthService: true}
+		g     = run.Group{}
 		flag1 flagTestConfig
 		flag2 flagTestConfig
 		irq   = make(chan error)
@@ -178,8 +183,8 @@ func TestDuplicateFlag(t *testing.T) {
 	// add our flags
 	g.Register(&flag1, &flag2)
 
-	// add our interruptor
-	g.Register(&group.TestSvc{
+	// add our interrupter
+	g.Register(&test.TestSvc{
 		SvcName: "irqsvc",
 		Execute: func() error { return errIRQ },
 	})
@@ -209,10 +214,9 @@ func TestRuntimeDeregister(t *testing.T) {
 		{"--s2-disable"},
 		{"--s1-disable", "--s2-disable"},
 	} {
-		for _, phase := range []string{"config", "prerunner", "service"} {
+		for _, phase := range []string{"config", "preRunner", "service"} {
 			var (
-				// We do not want to start the health service and its HTTP listener in this test
-				g          = run.Group{DisableHealthService: true}
+				g          = run.Group{}
 				s1, s2, s3 service
 				d1, d2     bool
 				disabler   disablerService
@@ -250,8 +254,8 @@ func TestRuntimeDeregister(t *testing.T) {
 						s2.disabled.serve = true
 					}
 				}
-			case "prerunner":
-				disabler.prerunner = func() {
+			case "preRunner":
+				disabler.preRunner = func() {
 					if d1 {
 						if dereg := g.Deregister(&s1); dereg[0] == false {
 							t.Errorf("%s: deregister want: true, have: %t", idx, dereg[0])
@@ -285,7 +289,7 @@ func TestRuntimeDeregister(t *testing.T) {
 				}))
 			}
 
-			g.Register(&group.TestSvc{
+			g.Register(&test.TestSvc{
 				SvcName: "testsvc",
 				Execute: func() error { return errIRQ },
 			})
@@ -447,7 +451,7 @@ var (
 type disablerService struct {
 	q         chan error
 	config    func()
-	prerunner func()
+	preRunner func()
 }
 
 func (d disablerService) Name() string {
@@ -467,8 +471,8 @@ func (d *disablerService) Validate() error {
 }
 
 func (d *disablerService) PreRun() error {
-	if d.prerunner != nil {
-		d.prerunner()
+	if d.preRunner != nil {
+		d.preRunner()
 	}
 	return nil
 }

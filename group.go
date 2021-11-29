@@ -1,4 +1,16 @@
-// Copyright (c) Tetrate, Inc 2021 All Rights Reserved.
+// Copyright (c) Tetrate, Inc 2021.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 // Package run implements an actor-runner with deterministic teardown.
 // It uses the https://github.com/oklog/run/ package as its basis and enhances
@@ -15,23 +27,27 @@ import (
 	color "github.com/logrusorgru/aurora"
 	"github.com/oklog/run"
 	"github.com/spf13/pflag"
-	l "github.com/tetratelabs/log"
 	"github.com/tetratelabs/multierror"
 
-	"github.com/tetrateio/tetrate/pkg"
-	"github.com/tetrateio/tetrate/pkg/version"
+	"github.com/tetratelabs/run/pkg/version"
 )
 
 // BinaryName holds the template variable that will be replaced by the Group
 // name in HelpText strings.
 const BinaryName = "{{.Name}}"
 
+// Error allows for creating constant errors instead of sentinel ones.
+type Error string
+
+// Error implements error.
+func (e Error) Error() string { return string(e) }
+
 // ErrBailEarlyRequest is returned when a call to RunConfig was successful but
 // signals that the application should exit in success immediately.
 // It is typically returned on --version and --help requests that have been
 // served. It can and should be used for custom config phase situations where
 // the job of the application is done.
-const ErrBailEarlyRequest pkg.Error = "exit request from flag handler"
+const ErrBailEarlyRequest Error = "exit request from flag handler"
 
 // FlagSet holds a pflag.FlagSet as well as an exported Name variable for
 // allowing improved help usage information.
@@ -61,7 +77,7 @@ type Unit interface {
 // Note, since an Initializer is a public function, make sure it is safe to be
 // called multiple times.
 type Initializer interface {
-	// implements Unit for Group registration and identification
+	// Unit is embedded for Group registration and identification
 	Unit
 	Initialize()
 }
@@ -81,7 +97,7 @@ type Namer interface {
 // their own configuration through the use of flags.
 // If a Unit's Validate returns an error it will stop the Group immediately.
 type Config interface {
-	// implements Unit for Group registration and identification
+	// Unit is embedded for Group registration and identification
 	Unit
 	// FlagSet returns an object's FlagSet
 	FlagSet() *FlagSet
@@ -93,7 +109,7 @@ type Config interface {
 // a pre run stage before starting the Group Services.
 // If a Unit's PreRun returns an error it will stop the Group immediately.
 type PreRunner interface {
-	// implements Unit for Group registration and identification
+	// Unit is embedded for Group registration and identification
 	Unit
 	PreRun() error
 }
@@ -127,7 +143,7 @@ func (p preRunner) PreRun() error {
 // Since Service is managed by Group, it is considered a design flaw to call any
 // of the Service methods directly in application code.
 type Service interface {
-	// implements Unit for Group registration and identification
+	// Unit is embedded for Group registration and identification
 	Unit
 	// Serve starts the GroupService and blocks.
 	Serve() error
@@ -139,31 +155,20 @@ type Service interface {
 // to manage service lifecycles. It allows for easy composition of elegant
 // monoliths as well as adding signal handlers, metrics services, etc.
 type Group struct {
-	// Name of the Group managed service. If omitted, the binaryname will be
+	// Name of the Group managed service. If omitted, the binary name will be
 	// used as found at runtime.
 	Name string
 	// HelpText is optional and allows to provide some additional help context
 	// when --help is requested.
 	HelpText string
 
-	f   *FlagSet
-	r   run.Group
-	i   []Initializer
-	n   []Namer
-	c   []Config
-	p   []PreRunner
-	s   []Service
-	log *l.Scope
-	h   *healthService
-
-	// DisableHealthService will disable the health service for this run group.
-	// By default, run group will install a health service listening in a HTTP
-	// endpoint to provide health status information for all registered services
-	// and the group itself.
-	// This flag can be used to turn this off and do not register the health
-	// service. It has to be set at group creation, before calling `Run` or any
-	// of the group execution phases.
-	DisableHealthService bool
+	f *FlagSet
+	r run.Group
+	i []Initializer
+	n []Namer
+	c []Config
+	p []PreRunner
+	s []Service
 
 	configured   bool
 	hsRegistered bool
@@ -266,12 +271,6 @@ func (g *Group) Deregister(units ...Unit) []bool {
 // is not an actual error but a request for Help, Version or other task that has
 // been finished and there is no more work left to handle.
 func (g *Group) RunConfig(args ...string) (err error) {
-	// Implicitly register Health Check Service before running configs
-	if !g.hsRegistered && !g.DisableHealthService {
-		g.h = &healthService{}
-		g.hsRegistered = g.Register(g.h)[0]
-	}
-
 	g.configured = true
 
 	if g.Name == "" {
@@ -281,15 +280,8 @@ func (g *Group) RunConfig(args ...string) (err error) {
 
 	g.HelpText = strings.ReplaceAll(g.HelpText, BinaryName, os.Args[0])
 
-	// register logging scope and try to use provided group name.
-	g.log = l.RegisterScope(g.Name, "Messages from the RunGroup handler", 0)
-	if g.log == nil {
-		g.log = l.RegisterScope("run", "Messages from the RunGroup handler", 0)
-	}
-
 	defer func() {
 		if err != nil && err != ErrBailEarlyRequest {
-			g.log.Errorf("unexpected exit: %v", err)
 			err = multierror.SetFormatter(err, multierror.ListFormatFunc)
 		}
 	}()
@@ -321,7 +313,7 @@ func (g *Group) RunConfig(args ...string) (err error) {
 		"show version information and exit.")
 	gFS.BoolVarP(&showHelp, "help", "h", false,
 		"show this help information and exit.")
-	gFS.BoolVar(&showRunGroup, "show-rungroup-units", false, "show rungroup units")
+	gFS.BoolVar(&showRunGroup, "show-rungroup-units", false, "show run group units")
 	_ = gFS.MarkHidden("show-rungroup-units")
 	g.f.AddFlagSet(gFS.FlagSet)
 
@@ -330,7 +322,7 @@ func (g *Group) RunConfig(args ...string) (err error) {
 		args = os.Args[1:]
 	}
 
-	// parse our rungroup flags only (not the plugin ones)
+	// parse our run group flags only (not the plugin ones)
 	_ = gFS.Parse(args)
 	if name != "" {
 		g.Name = name
@@ -338,7 +330,7 @@ func (g *Group) RunConfig(args ...string) (err error) {
 
 	// initialize all Units implementing Initializer
 	for idx, i := range g.i {
-		// an Initializer might have been deregistered
+		// an Initializer might have been de-registered
 		if i != nil {
 			i.Initialize()
 			// don't call in Run phase again
@@ -348,34 +340,28 @@ func (g *Group) RunConfig(args ...string) (err error) {
 
 	// inform all Units implementing Namer of the parsed Group name
 	for _, n := range g.n {
-		// a Namer might have been deregistered
+		// a Namer might have been de-registered
 		if n != nil {
 			n.GroupName(g.Name)
 		}
 	}
 
-	// register logging configuration
-	logOpts := l.DefaultOptions()
-	g.c = append([]Config{&logOptions{logOpts}}, g.c...)
-
 	// register flags from attached Config objects
 	fs := make([]*FlagSet, len(g.c))
 	for idx := range g.c {
-		// a Namer might have been deregistered
+		// a Config might have been de-registered
 		if g.c[idx] == nil {
 			continue
 		}
-		g.log.Debugf("register flags: %s (%d/%d)", g.c[idx].Name(), idx+1, len(g.c))
+
 		fs[idx] = g.c[idx].FlagSet()
 		if fs[idx] == nil {
 			// no FlagSet returned
-			g.log.Debugf("config object did not return a flagset [%d]", idx)
 			continue
 		}
 		fs[idx].VisitAll(func(f *pflag.Flag) {
 			if g.f.Lookup(f.Name) != nil {
-				// log duplicate flag
-				g.log.Warnf("ignoring duplicate flag: %s [%d]", f.Name, idx)
+				// todo: log duplicate flag
 				return
 			}
 			g.f.AddFlag(f)
@@ -410,20 +396,14 @@ func (g *Group) RunConfig(args ...string) (err error) {
 		return ErrBailEarlyRequest
 	}
 
-	// initialize the logging subsystem
-	if err = l.Configure(logOpts); err != nil {
-		g.log.Errorf("failed to configure logging: %v", err)
-		return err
-	}
-
 	// Validate Config inputs
 	for idx := range g.c {
-		// a Config might have been deregistered during Run
+		// a Config might have been de-registered during Run
 		if g.c[idx] == nil {
-			g.log.Debugf("skipping validate: %d", idx)
+			// todo: log.debug("skipping validate", "index", idx)
 			continue
 		}
-		g.log.Debugf("validate config: %s (%d/%d)", g.c[idx].Name(), idx+1, len(g.c))
+		// todo: log.debug("validate config: %s (%d/%d)", g.c[idx].Name(), idx+1, len(g.c))
 		if vErr := g.c[idx].Validate(); vErr != nil {
 			err = multierror.Append(err, vErr)
 		}
@@ -435,9 +415,9 @@ func (g *Group) RunConfig(args ...string) (err error) {
 	}
 
 	// log binary name and version
-	g.log.Info(g.Name + " " + version.Parse() + " started")
+	// todo: log.info("%s %s started", g.Name, version.Parse())
 
-	l.PrintRegisteredScopes()
+	// todo: log registered scopes and levels (if logging package has it)
 
 	return nil
 }
@@ -487,7 +467,7 @@ func (g *Group) Run(args ...string) (err error) {
 
 	defer func() {
 		if err != nil {
-			g.log.Errorf("unexpected exit: %v", err)
+			// todo: log.error(err, "unexpected exit")
 			err = multierror.SetFormatter(err, multierror.ListFormatFunc)
 		}
 	}()
@@ -496,7 +476,7 @@ func (g *Group) Run(args ...string) (err error) {
 	// In case a Unit was registered for PreRun and/or Serve phase after Config
 	// phase was completed, we still want to run the Initializer if existent.
 	for _, i := range g.i {
-		// an Initializer might have been deregistered
+		// an Initializer might have been de-registered
 		if i != nil {
 			i.Initialize()
 		}
@@ -504,34 +484,29 @@ func (g *Group) Run(args ...string) (err error) {
 
 	// execute pre run stage and exit on error
 	for idx := range g.p {
-		// a PreRunner might have been deregistered during Run
+		// a PreRunner might have been de-registered during Run
 		if g.p[idx] == nil {
 			continue
 		}
-		g.log.Debugf("pre-run: %s (%d/%d)", g.p[idx].Name(), idx+1, len(g.p))
+		// todo: log.debug("pre-run: %s (%d/%d)", g.p[idx].Name(), idx+1, len(g.p))
 		if err := g.p[idx].PreRun(); err != nil {
 			return fmt.Errorf("pre-run %s: %w", g.p[idx].Name(), err)
 		}
-
-		// register health checkers of pre-run Units
-		g.h.register(g.p[idx])
 	}
 
 	// feed our registered services to our internal run.Group
 	for idx := range g.s {
-		// a Service might have been deregistered during Run
+		// a Service might have been de-registered during Run
 		s := g.s[idx]
 		if s == nil {
 			continue
 		}
-		// register health checkers
-		g.h.register(s)
 
-		g.log.Debugf("serve: %s (%d/%d)", s.Name(), idx+1, len(g.s))
+		// todo: log.debug("serve: %s (%d/%d)", s.Name(), idx+1, len(g.s))
 		g.r.Add(func() error {
 			return s.Serve()
 		}, func(_ error) {
-			g.log.Debugf("stop: %s (%d/%d)", s.Name(), idx+1, len(g.s))
+			// todo: log.debug("stop: %s (%d/%d)", s.Name(), idx+1, len(g.s))
 			s.GracefulStop()
 		})
 	}
@@ -565,7 +540,7 @@ func (g Group) ListUnits() string {
 		}
 	}
 	if len(g.p) > 0 {
-		s += "\n- prerun: "
+		s += "\n- pre-run: "
 		for _, u := range g.p {
 			if u != nil {
 				s += u.Name() + " "
