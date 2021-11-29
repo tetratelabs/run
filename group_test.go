@@ -164,7 +164,7 @@ func TestRunPreRunFailure(t *testing.T) {
 
 	select {
 	case err := <-irq:
-		if !test.HasError(err, e) {
+		if !errors.Is(err, e) {
 			t.Errorf("Expected %v, got %v", e, err)
 		}
 	case <-time.After(100 * time.Millisecond):
