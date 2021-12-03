@@ -58,19 +58,23 @@ func (l *Logger) Error(msg string, err error, keyValuePairs ...interface{}) {
 }
 
 func (l *Logger) With(_ ...interface{}) telemetry.Logger {
-	panic("not used by run.Group")
+	// not used by run.Group
+	return l
 }
 
-func (l *Logger) KeyValuesToContext(_ context.Context, _ ...interface{}) context.Context {
-	panic("not used by run.Group")
+func (l *Logger) KeyValuesToContext(ctx context.Context, _ ...interface{}) context.Context {
+	// not used by run.Group
+	return ctx
 }
 
 func (l *Logger) Context(_ context.Context) telemetry.Logger {
-	panic("not used by run.Group")
+	// not used by run.Group
+	return l
 }
 
 func (l *Logger) Metric(_ telemetry.Metric) telemetry.Logger {
-	panic("not used by run.Group")
+	// not used by run.Group
+	return l
 }
 
 var _ telemetry.Logger = (*Logger)(nil)
