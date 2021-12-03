@@ -28,7 +28,9 @@ import (
 	"github.com/oklog/run"
 	"github.com/spf13/pflag"
 	"github.com/tetratelabs/multierror"
+	"github.com/tetratelabs/telemetry"
 
+	"github.com/tetratelabs/run/pkg/log"
 	"github.com/tetratelabs/run/pkg/version"
 )
 
@@ -161,6 +163,7 @@ type Group struct {
 	// HelpText is optional and allows to provide some additional help context
 	// when --help is requested.
 	HelpText string
+	Logger telemetry.Logger
 
 	f *FlagSet
 	r run.Group
@@ -272,6 +275,9 @@ func (g *Group) Deregister(units ...Unit) []bool {
 // been finished and there is no more work left to handle.
 func (g *Group) RunConfig(args ...string) (err error) {
 	g.configured = true
+	if g.Logger == nil {
+		g.Logger = &log.Logger{}
+	}
 
 	if g.Name == "" {
 		// use the binary name if custom name has not been provided
@@ -282,6 +288,7 @@ func (g *Group) RunConfig(args ...string) (err error) {
 
 	defer func() {
 		if err != nil && err != ErrBailEarlyRequest {
+			g.Logger.Error("unexpected exit", err)
 			err = multierror.SetFormatter(err, multierror.ListFormatFunc)
 		}
 	}()
@@ -353,15 +360,19 @@ func (g *Group) RunConfig(args ...string) (err error) {
 		if g.c[idx] == nil {
 			continue
 		}
-
+		g.Logger.Debug("registering flags",
+			"name", g.c[idx].Name(),
+			"index", fmt.Sprintf("(%d/%d)", idx+1, len(g.c)),
+		)
 		fs[idx] = g.c[idx].FlagSet()
 		if fs[idx] == nil {
 			// no FlagSet returned
+			g.Logger.Debug("config object did not return a flagset", "index", idx)
 			continue
 		}
 		fs[idx].VisitAll(func(f *pflag.Flag) {
 			if g.f.Lookup(f.Name) != nil {
-				// todo: log duplicate flag
+				g.Logger.Debug("ignoring duplicate flag", "name", f.Name, "index", idx)
 				return
 			}
 			g.f.AddFlag(f)
@@ -400,10 +411,13 @@ func (g *Group) RunConfig(args ...string) (err error) {
 	for idx := range g.c {
 		// a Config might have been de-registered during Run
 		if g.c[idx] == nil {
-			// todo: log.debug("skipping validate", "index", idx)
+			g.Logger.Debug("skipping validate", "index", idx)
 			continue
 		}
-		// todo: log.debug("validate config: %s (%d/%d)", g.c[idx].Name(), idx+1, len(g.c))
+		g.Logger.Debug("validate config",
+			"name", g.c[idx].Name(),
+			fmt.Sprintf("(%d/%d)", idx+1, len(g.c)),
+		)
 		if vErr := g.c[idx].Validate(); vErr != nil {
 			err = multierror.Append(err, vErr)
 		}
@@ -415,7 +429,7 @@ func (g *Group) RunConfig(args ...string) (err error) {
 	}
 
 	// log binary name and version
-	// todo: log.info("%s %s started", g.Name, version.Parse())
+	g.Logger.Info(g.Name+" "+version.Parse()+" started")
 
 	// todo: log registered scopes and levels (if logging package has it)
 
@@ -467,7 +481,7 @@ func (g *Group) Run(args ...string) (err error) {
 
 	defer func() {
 		if err != nil {
-			// todo: log.error(err, "unexpected exit")
+			g.Logger.Error("unexpected exit", err)
 			err = multierror.SetFormatter(err, multierror.ListFormatFunc)
 		}
 	}()
@@ -488,7 +502,10 @@ func (g *Group) Run(args ...string) (err error) {
 		if g.p[idx] == nil {
 			continue
 		}
-		// todo: log.debug("pre-run: %s (%d/%d)", g.p[idx].Name(), idx+1, len(g.p))
+		g.Logger.Debug("pre-run",
+			"name",  g.p[idx].Name(),
+			fmt.Sprintf("(%d/%d)",idx+1, len(g.p)),
+		)
 		if err := g.p[idx].PreRun(); err != nil {
 			return fmt.Errorf("pre-run %s: %w", g.p[idx].Name(), err)
 		}
@@ -501,12 +518,17 @@ func (g *Group) Run(args ...string) (err error) {
 		if s == nil {
 			continue
 		}
-
-		// todo: log.debug("serve: %s (%d/%d)", s.Name(), idx+1, len(g.s))
+		g.Logger.Debug("serve",
+			"name", s.Name(),
+			fmt.Sprintf("(%d/%d)", idx+1, len(g.s)),
+		)
 		g.r.Add(func() error {
 			return s.Serve()
 		}, func(_ error) {
-			// todo: log.debug("stop: %s (%d/%d)", s.Name(), idx+1, len(g.s))
+			g.Logger.Debug("stop",
+				"name", s.Name(),
+				fmt.Sprintf("(%d/%d)", idx+1, len(g.s)),
+			)
 			s.GracefulStop()
 		})
 	}
