@@ -16,25 +16,19 @@ package run_test
 
 import (
 	"context"
+	"reflect"
 	"testing"
-
-	. "github.com/onsi/gomega"
+	"time"
 
 	"github.com/tetratelabs/run"
 )
 
 func TestLifecycle(t *testing.T) {
-	g := NewWithT(t)
-
-	// when
-
 	l := run.NewLifecycle()
 
-	// then
-
-	g.Expect(l.Name()).To(Equal("lifecycle-tracker"))
-
-	// when
+	if want, have := "lifecycle-tracker", l.Name(); want != have {
+		t.Errorf("unexpected unit name: want %q, have %q", want, have)
+	}
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -43,16 +37,42 @@ func TestLifecycle(t *testing.T) {
 		errCh <- (l.(run.Service)).Serve()
 	}()
 
-	// then
-
-	g.Consistently(l.Context().Err, "25ms").Should(BeNil())
-
-	// when
+	waitFor := time.Now().Add(25 * time.Millisecond)
+	for {
+		err := l.Context().Err()
+		if err != nil {
+			t.Fatalf("unexpected context error: %+v", err)
+		}
+		if time.Now().After(waitFor) {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 
 	(l.(run.Service)).GracefulStop()
 
-	// then
+	ctx := l.Context()
 
-	g.Expect(l.Context().Err()).To(MatchError(context.Canceled))
-	g.Expect(l.Context().Done()).To(BeClosed())
+	if want, have := context.Canceled, ctx.Err(); want != have {
+		t.Errorf("unexpected error: want %v, have %v", want, have)
+	}
+
+	if !isChannelClosed(ctx.Done()) {
+		t.Errorf("expected context.Done() to be closed")
+	}
+}
+
+func isChannelClosed(val interface{}) bool {
+	channelValue := reflect.ValueOf(val)
+	winnerIndex, _, open := reflect.Select([]reflect.SelectCase{
+		{Dir: reflect.SelectRecv, Chan: channelValue},
+		{Dir: reflect.SelectDefault},
+	})
+	var closed bool
+	if winnerIndex == 0 {
+		closed = !open
+	} else if winnerIndex == 1 {
+		closed = false
+	}
+	return closed
 }
