@@ -19,6 +19,7 @@
 package run
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -31,6 +32,7 @@ import (
 	"github.com/tetratelabs/telemetry"
 
 	"github.com/tetratelabs/run/pkg/log"
+	"github.com/tetratelabs/run/pkg/signal"
 	"github.com/tetratelabs/run/pkg/version"
 )
 
@@ -163,7 +165,7 @@ type Group struct {
 	// HelpText is optional and allows to provide some additional help context
 	// when --help is requested.
 	HelpText string
-	Logger telemetry.Logger
+	Logger   telemetry.Logger
 
 	f *FlagSet
 	r run.Group
@@ -429,9 +431,7 @@ func (g *Group) RunConfig(args ...string) (err error) {
 	}
 
 	// log binary name and version
-	g.Logger.Info(g.Name+" "+version.Parse()+" started")
-
-	// todo: log registered scopes and levels (if logging package has it)
+	g.Logger.Info(g.Name + " " + version.Parse() + " started")
 
 	return nil
 }
@@ -481,8 +481,10 @@ func (g *Group) Run(args ...string) (err error) {
 
 	defer func() {
 		if err != nil {
-			g.Logger.Error("unexpected exit", err)
-			err = multierror.SetFormatter(err, multierror.ListFormatFunc)
+			if !errors.Is(err, signal.ErrSignal) {
+				g.Logger.Error("unexpected exit", err)
+				err = multierror.SetFormatter(err, multierror.ListFormatFunc)
+			}
 		}
 	}()
 
@@ -503,8 +505,8 @@ func (g *Group) Run(args ...string) (err error) {
 			continue
 		}
 		g.Logger.Debug("pre-run",
-			"name",  g.p[idx].Name(),
-			fmt.Sprintf("(%d/%d)",idx+1, len(g.p)),
+			"name", g.p[idx].Name(),
+			fmt.Sprintf("(%d/%d)", idx+1, len(g.p)),
 		)
 		if err := g.p[idx].PreRun(); err != nil {
 			return fmt.Errorf("pre-run %s: %w", g.p[idx].Name(), err)
