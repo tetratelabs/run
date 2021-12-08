@@ -501,7 +501,7 @@ func (g *Group) Run(args ...string) (err error) {
 		}
 		// test if this is a requested / expected shutdown...
 		if errors.Is(err, ErrRequestedShutdown) {
-			g.Logger.Info("received shutdown request")
+			g.Logger.Info("received shutdown request", "details", err)
 			err = nil
 			return
 		}
