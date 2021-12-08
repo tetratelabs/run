@@ -367,7 +367,7 @@ func (g *Group) RunConfig(args ...string) (err error) {
 		}
 		g.Logger.Debug("registering flags",
 			"name", g.c[idx].Name(),
-			"index", fmt.Sprintf("(%d/%d)", idx+1, len(g.c)),
+			"item", fmt.Sprintf("(%d/%d)", idx+1, len(g.c)),
 		)
 		fs[idx] = g.c[idx].FlagSet()
 		if fs[idx] == nil {
@@ -421,7 +421,7 @@ func (g *Group) RunConfig(args ...string) (err error) {
 		}
 		g.Logger.Debug("validate config",
 			"name", g.c[idx].Name(),
-			fmt.Sprintf("(%d/%d)", idx+1, len(g.c)),
+			"item", fmt.Sprintf("(%d/%d)", idx+1, len(g.c)),
 		)
 		if vErr := g.c[idx].Validate(); vErr != nil {
 			err = multierror.Append(err, vErr)
@@ -528,7 +528,7 @@ func (g *Group) Run(args ...string) (err error) {
 		}
 		g.Logger.Debug("pre-run",
 			"name", g.p[idx].Name(),
-			fmt.Sprintf("(%d/%d)", idx+1, len(g.p)),
+			"item", fmt.Sprintf("(%d/%d)", idx+1, len(g.p)),
 		)
 		if err := g.p[idx].PreRun(); err != nil {
 			return fmt.Errorf("pre-run %s: %w", g.p[idx].Name(), err)
@@ -545,14 +545,14 @@ func (g *Group) Run(args ...string) (err error) {
 		hasServices = true
 		g.Logger.Debug("serve",
 			"name", s.Name(),
-			fmt.Sprintf("(%d/%d)", idx+1, len(g.s)),
+			"item", fmt.Sprintf("(%d/%d)", idx+1, len(g.s)),
 		)
 		g.r.Add(func() error {
 			return s.Serve()
 		}, func(_ error) {
 			g.Logger.Debug("stop",
 				"name", s.Name(),
-				fmt.Sprintf("(%d/%d)", idx+1, len(g.s)),
+				"item", fmt.Sprintf("(%d/%d)", idx+1, len(g.s)),
 			)
 			s.GracefulStop()
 		})
