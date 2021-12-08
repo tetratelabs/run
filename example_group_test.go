@@ -42,10 +42,8 @@ func Example() {
 	// Start our services and block until error or exit request.
 	// If sending a SIGINT to the process, a graceful shutdown of the
 	// application will occur.
-	err := g.Run()
-	fmt.Printf("Service Exit: %v\n", err)
-	if !errors.Is(err, signal.ErrSignal) {
-		// we had an actual fatal error
+	if err := g.Run(); err != nil {
+		fmt.Printf("Unexpected exit: %v\n", err)
 		os.Exit(-1)
 	}
 }
