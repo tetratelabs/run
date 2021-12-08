@@ -35,6 +35,8 @@ func TestParse(t *testing.T) {
 		{input: "0.6.6-internal-rc1-0-g12345678-HEAD", want: "v0.6.6-internal-rc1"},
 		{input: "0.6.6-rc1-g12345678-master", want: "v0.0.0-unofficial"}, // unparseable: no commits present
 		{input: "", want: "v0.0.0-unofficial"},
+		{input: "0.6.6-rc1-15-g12345678-want-more-branch", want: "v0.6.6-rc1-want-more-branch (12345678, +15)"}, // branch name with hypens should be captured.
+		{input: "v0.6.6-rc1-15-g12345678-want-more-branch", want: "v0.6.6-rc1-want-more-branch (12345678, +15)"},
 	}
 	for _, test := range tests {
 		t.Run(test.input, func(t *testing.T) {

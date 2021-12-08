@@ -18,9 +18,21 @@ package version
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 )
+
+// gitDescribeHashIndexPattern matches the git describe hash index pattern in the version string.
+// The version string should be in the format:
+// 		<release tag>-<commits since release tag>-g<commit hash>-<branch name>
+// As an example: 0.6.6-rc1-15-g12345678-want-more-branch, the "g" prefix stands for "git"
+// (see: https://git-scm.com/docs/git-describe).
+var gitDescribeHashIndexPattern = regexp.MustCompile(`-[0-9]+(-g+)+`)
+
+// gitCommitsAheadPattern captures the commits ahead pattern in the version substring (that should
+// be an integer).
+var gitCommitsAheadPattern = regexp.MustCompile(`[0-9]+`)
 
 // build is to be populated at build time using -ldflags -X.
 //
@@ -72,31 +84,36 @@ func (g Git) String() string {
 // is in the format:
 //    <release tag>-<commits since release tag>-g<commit hash>-<branch name>
 func parseGit(v string) Git {
-	parts := strings.Split(v, "-")
-	l := len(parts)
-	if l < 4 {
+	// Here we try to find the "-<commits since release tag>-g"-part.
+	found := gitDescribeHashIndexPattern.FindStringIndex(v)
+	if found == nil {
 		return Git{}
 	}
 
-	// The git tag could contain '-' characters, so we start parting the version string
-	// from the last parts, and concatenate the remaining ones at the beginning to reconstruct
-	// the original tag if it had '-' characters.
+	idx := strings.Index(v[found[1]:], "-")
+	if idx == -1 {
+		return Git{}
+	}
+	branch := v[found[1]:][idx+1:] // branch name is the part after the "-g<commit hash>-".
+	sha := v[found[1]:][:idx]
 
-	commits, err := strconv.Atoi(parts[l-3])
-	if err != nil { // extra safety but should never happen
+	commits, err := strconv.Atoi(gitCommitsAheadPattern.FindString(v[found[0]+1:]))
+	if err != nil { // extra safety but should never happen.
 		return Git{}
 	}
 
 	// prefix v on semantic versioning tags omitting it
 	// Go module tags should include the 'v'
-	if strings.ToLower(parts[0])[0] != 'v' {
-		parts[0] = "v" + parts[0]
+	closestTagIndex := 0
+	if strings.ToLower(v)[0] != 'v' {
+		v = "v" + v
+		closestTagIndex = 1
 	}
 
 	return Git{
-		ClosestTag:   strings.Join(parts[:l-3], "-"),
+		ClosestTag:   v[0 : found[0]+closestTagIndex],
 		CommitsAhead: commits,
-		Sha:          parts[l-2][1:], // remove the 'g' prefix
-		Branch:       parts[l-1],
+		Sha:          sha,
+		Branch:       branch,
 	}
 }
