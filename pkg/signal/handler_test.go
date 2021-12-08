@@ -68,7 +68,7 @@ func TestSignalHandlerSignals(t *testing.T) {
 		err    error
 	}{
 		{action: s.sendHUP, err: errHUP},
-		{action: s.sendQUIT, err: ErrSignal},
+		{action: s.sendQUIT, err: run.ErrRequestShutdown},
 	}
 	for idx, tt := range tests {
 		var (

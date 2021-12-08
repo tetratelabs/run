@@ -20,6 +20,8 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/tetratelabs/run"
 )
 
 // Error allows for creating constant errors instead of sentinel ones.
@@ -27,9 +29,6 @@ type Error string
 
 // Error implements error.
 func (e Error) Error() string { return string(e) }
-
-// ErrSignal is returned when a termination signal is received.
-const ErrSignal = Error("signal received")
 
 // Handler implements a unix signal handler as run.GroupService.
 type Handler struct {
@@ -77,7 +76,7 @@ func (h *Handler) Serve() error {
 					}
 				}
 			case syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTERM:
-				return fmt.Errorf("%s %w", sig, ErrSignal)
+				return fmt.Errorf("%s %w", sig, run.ErrRequestedShutdown)
 			}
 		case <-h.cancel:
 			signal.Stop(h.signal)

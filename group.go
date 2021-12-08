@@ -32,7 +32,6 @@ import (
 	"github.com/tetratelabs/telemetry"
 
 	"github.com/tetratelabs/run/pkg/log"
-	"github.com/tetratelabs/run/pkg/signal"
 	"github.com/tetratelabs/run/pkg/version"
 )
 
@@ -52,6 +51,10 @@ func (e Error) Error() string { return string(e) }
 // served. It can and should be used for custom config phase situations where
 // the job of the application is done.
 const ErrBailEarlyRequest Error = "exit request from flag handler"
+
+// ErrRequestedShutdown can be used by Service implementations to gracefully
+// request a shutdown of the application. Group will then exit without errors.
+const ErrRequestedShutdown Error = "shutdown requested"
 
 // FlagSet holds a pflag.FlagSet as well as an exported Name variable for
 // allowing improved help usage information.
@@ -479,13 +482,32 @@ func (g *Group) Run(args ...string) (err error) {
 		}
 	}
 
+	var hasServices bool
+
 	defer func() {
-		if err != nil {
-			if !errors.Is(err, signal.ErrSignal) {
+		if err == nil {
+			// Registered services should never initiate an exit without an
+			// error. Services allowing intended shutdowns must use the
+			// ErrRequestShutdown error (or wrap it) to signal intent.
+			// If Group is used without services (e.g. PreRunner scripts) this
+			// is fine.
+			if hasServices {
+				err = errors.New("run terminated without explicit error condition")
 				g.Logger.Error("unexpected exit", err)
-				err = multierror.SetFormatter(err, multierror.ListFormatFunc)
+				return
 			}
+			g.Logger.Info("done")
+			return
 		}
+		// test if this is a requested / expected shutdown...
+		if errors.Is(err, ErrRequestedShutdown) {
+			g.Logger.Info("received shutdown request")
+			err = nil
+			return
+		}
+		// actual fatal error
+		g.Logger.Error("unexpected exit", err)
+		err = multierror.SetFormatter(err, multierror.ListFormatFunc)
 	}()
 
 	// call our Initializer (again)
@@ -520,6 +542,7 @@ func (g *Group) Run(args ...string) (err error) {
 		if s == nil {
 			continue
 		}
+		hasServices = true
 		g.Logger.Debug("serve",
 			"name", s.Name(),
 			fmt.Sprintf("(%d/%d)", idx+1, len(g.s)),
