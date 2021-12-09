@@ -32,6 +32,9 @@ import (
 //   go build -ldflags '${GO_LINK_VERSION}'
 var build string
 
+// mainBranches is a list of (sorted) main branches/revisions.
+var mainBranches = []string{"HEAD", "main", "master"}
+
 // Show the service's version information
 func Show(serviceName string) {
 	fmt.Println(serviceName + " " + Parse())
@@ -60,7 +63,7 @@ func (g Git) String() string {
 		// In the version string, the commit tag is prefixed with "-g" (which stands for "git").
 		// When printing the version string, remove that prefix to just show the real commit hash.
 		return fmt.Sprintf("%s-%s (%s, +%d)", g.ClosestTag, g.Branch, g.Sha, g.CommitsAhead)
-	case g.Branch != "master" && g.Branch != "HEAD":
+	case !isMainBranch(g.Branch):
 		// specific branch release build
 		return fmt.Sprintf("%s-%s", g.ClosestTag, g.Branch)
 	default:
@@ -99,4 +102,14 @@ func parseGit(v string) Git {
 		Sha:          parts[l-2][1:], // remove the 'g' prefix
 		Branch:       parts[l-1],
 	}
+}
+
+// isMainBranch returns true if the given branch name is a main branch.
+func isMainBranch(branch string) bool {
+	for _, b := range mainBranches {
+		if b == branch {
+			return true
+		}
+	}
+	return false
 }

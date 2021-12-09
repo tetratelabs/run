@@ -27,11 +27,14 @@ func TestParse(t *testing.T) {
 	//   <release tag>-<commits since release tag>-<commit hash>-<branch name>
 	tests := []versionStringTest{
 		{input: "0.6.6-0-g12345678-master", want: "v0.6.6"},
+		{input: "0.6.6-0-g12345678-main", want: "v0.6.6"},
+		{input: "0.6.6-0-g12345678-HEAD", want: "v0.6.6"},
 		{input: "0.6.6-0-g87654321-custom", want: "v0.6.6-custom"},
 		{input: "0.6.6-2-gabcdef01-master", want: "v0.6.6-master (abcdef01, +2)"},
 		{input: "0.6.6-1-g123456ab-custom", want: "v0.6.6-custom (123456ab, +1)"},
 		{input: "0.6.6-rc1-0-g12345678-master", want: "v0.6.6-rc1"},
 		{input: "0.6.6-internal-rc1-0-g12345678-master", want: "v0.6.6-internal-rc1"},
+		{input: "0.6.6-internal-rc1-0-g12345678-main", want: "v0.6.6-internal-rc1"},
 		{input: "0.6.6-internal-rc1-0-g12345678-HEAD", want: "v0.6.6-internal-rc1"},
 		{input: "0.6.6-rc1-g12345678-master", want: "v0.0.0-unofficial"}, // unparseable: no commits present
 		{input: "", want: "v0.0.0-unofficial"},
