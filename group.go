@@ -543,16 +543,17 @@ func (g *Group) Run(args ...string) (err error) {
 			continue
 		}
 		hasServices = true
+		itemNr := idx + 1
 		g.Logger.Debug("serve",
 			"name", s.Name(),
-			"item", fmt.Sprintf("(%d/%d)", idx+1, len(g.s)),
+			"item", fmt.Sprintf("(%d/%d)", itemNr, len(g.s)),
 		)
 		g.r.Add(func() error {
 			return s.Serve()
 		}, func(_ error) {
 			g.Logger.Debug("stop",
 				"name", s.Name(),
-				"item", fmt.Sprintf("(%d/%d)", idx+1, len(g.s)),
+				"item", fmt.Sprintf("(%d/%d)", itemNr, len(g.s)),
 			)
 			s.GracefulStop()
 		})
