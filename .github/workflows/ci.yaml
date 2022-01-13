@@ -15,7 +15,6 @@ jobs:
           - 1.17.x
         os:
           - ubuntu-latest
-          - windows-latest
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v2
@@ -23,3 +22,5 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
       - run: go test ./...
+        env:
+          GOMAXPROCS: 4
