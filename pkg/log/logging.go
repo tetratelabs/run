@@ -26,9 +26,8 @@ import (
 // It is used by run.Group when not wired up with an explicit Logging
 // implementation.
 type Logger struct {
-	args   []interface{}
+	args []interface{}
 }
-
 
 func (l *Logger) Debug(msg string, keyValuePairs ...interface{}) {
 	args := []interface{}{
@@ -60,6 +59,20 @@ func (l *Logger) Error(msg string, err error, keyValuePairs ...interface{}) {
 func (l *Logger) With(_ ...interface{}) telemetry.Logger {
 	// not used by run.Group
 	return l
+}
+
+func (l *Logger) Clone() telemetry.Logger {
+	// not used by run.Group
+	return l
+}
+
+func (l *Logger) Level() telemetry.Level {
+	// not used by run.Group
+	return telemetry.LevelNone
+}
+
+func (l *Logger) SetLevel(telemetry.Level) {
+	// not used by run.Group
 }
 
 func (l *Logger) KeyValuesToContext(ctx context.Context, _ ...interface{}) context.Context {
