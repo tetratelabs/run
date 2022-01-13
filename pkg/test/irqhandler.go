@@ -79,7 +79,7 @@ func (i *irqSvc) Close() error {
 	defer i.mu.Unlock()
 
 	if i.irq != nil {
-		i.irq <- nil
+		i.irq <- run.ErrRequestedShutdown
 	}
 	return nil
 }
