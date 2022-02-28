@@ -607,3 +607,9 @@ func (g Group) ListUnits() string {
 
 	return fmt.Sprintf("Group: %s [%s]%s", g.Name, t, s)
 }
+
+// Visit visits the group's flags in lexicographical order or in primordial order if f.SortFlags is
+// false, calling fn for each. It visits only those flags that have been set.
+func (g Group) Visit(fn func(*pflag.Flag)) {
+	g.f.Visit(fn)
+}
