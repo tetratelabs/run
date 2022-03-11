@@ -34,6 +34,7 @@ func (l *Logger) Debug(msg string, keyValuePairs ...interface{}) {
 		time.Now().Format("2006-01-02 15:04:05.000000  "),
 		"msg", msg, "level", "debug",
 	}
+	args = append(args, l.args...)
 	args = append(args, keyValuePairs...)
 	log.Println(args...)
 }
@@ -43,6 +44,7 @@ func (l *Logger) Info(msg string, keyValuePairs ...interface{}) {
 		time.Now().Format("2006-01-02 15:04:05.000000  "),
 		"msg", msg, "level", "info",
 	}
+	args = append(args, l.args...)
 	args = append(args, keyValuePairs...)
 	log.Println(args...)
 }
@@ -52,18 +54,21 @@ func (l *Logger) Error(msg string, err error, keyValuePairs ...interface{}) {
 		time.Now().Format("2006-01-02 15:04:05.000000  "),
 		"msg", msg, "level", "error", "error", err.Error(),
 	}
+	args = append(args, l.args...)
 	args = append(args, keyValuePairs...)
 	log.Println(args...)
 }
 
-func (l *Logger) With(_ ...interface{}) telemetry.Logger {
-	// not used by run.Group
-	return l
+func (l Logger) With(keyValuePairs ...interface{}) telemetry.Logger {
+	newLogger := l.Clone().(*Logger)
+	newLogger.args = append(newLogger.args, keyValuePairs...)
+	return newLogger
 }
 
 func (l *Logger) Clone() telemetry.Logger {
-	// not used by run.Group
-	return l
+	return &Logger{
+		args: append(([]interface{})(nil), l.args...),
+	}
 }
 
 func (l *Logger) Level() telemetry.Level {
