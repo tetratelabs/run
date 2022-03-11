@@ -15,6 +15,7 @@
 package run_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -37,12 +38,15 @@ func TestRunGroupSvcLifeCycle(t *testing.T) {
 	var (
 		g       = run.Group{}
 		s       service
+		sc serviceContext
 		irq     = make(chan error)
 		hasName bool
 	)
 
 	// add our service to Group
 	g.Register(&s)
+	// add our context aware service to Group
+	g.Register(&sc)
 
 	// add our interrupter
 	g.Register(&test.TestSvc{
@@ -80,10 +84,16 @@ func TestRunGroupSvcLifeCycle(t *testing.T) {
 			t.Errorf("Expected preRun logic to run")
 		}
 		if !s.serve {
-			t.Errorf("Expected serve logic to run")
+			t.Errorf("Expected serve logic to run: service")
+		}
+		if !sc.serve {
+			t.Errorf("Expected serve logic to run: serviceContext")
 		}
 		if !s.gracefulStop {
 			t.Errorf("Expected graceful stop logic to run")
+		}
+		if !sc.contextDone {
+			t.Errorf("Expected context cancellation to be received")
 		}
 		if !hasName {
 			t.Errorf("Expected valid name from env")
@@ -474,5 +484,26 @@ func (d *disablerService) PreRun() error {
 	if d.preRunner != nil {
 		d.preRunner()
 	}
+	return nil
+}
+
+var (
+	_ run.ServiceContext = (*serviceContext)(nil)
+)
+
+type serviceContext struct {
+	serve bool
+	contextDone bool
+}
+
+
+func (s serviceContext) Name() string {
+	return "svc-context"
+}
+
+func (s *serviceContext) ServeContext(ctx context.Context) error {
+	s.serve = true
+	<-ctx.Done()
+	s.contextDone = true
 	return nil
 }
