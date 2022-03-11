@@ -15,6 +15,7 @@
 package test_test
 
 import (
+	"runtime"
 	"sync"
 	"testing"
 
@@ -25,6 +26,9 @@ import (
 
 // TestIRQService test if irqs returns a valid error for deliberate termination.
 func TestIRQService(t *testing.T) {
+	if ps := runtime.GOMAXPROCS(runtime.NumCPU()); ps < 3 {
+		t.Skipf("GOMAXPROCS not sufficient for test: %d", ps)
+	}
 	var (
 		g    = &run.Group{Name: "test", Logger: telemetry.NoopLogger()}
 		irqs = test.NewIRQService(func() {})

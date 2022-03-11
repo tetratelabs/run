@@ -16,6 +16,7 @@
 package signal
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
@@ -49,7 +50,6 @@ func (h Handler) Name() string {
 
 // PreRun implements run.PreRunner to initialize the handler.
 func (h *Handler) PreRun() error {
-	h.cancel = make(chan struct{})
 	// Notify uses a non-blocking channel send. If handling a HUP and receiving
 	// an INT shortly after, it might get lost if we don't use a buffered
 	// channel here.
@@ -60,11 +60,12 @@ func (h *Handler) PreRun() error {
 	return nil
 }
 
-// Serve implements run.GroupService and listens for incoming unix signals.
+// ServeContext implements run.ServiceContext and listens for incoming unix
+// signals.
 // If a callback handler was registered it will be executed if a "SIGHUP" is
 // received. If the callback handler returns an error it will exit in error and
 // initiate Group shutdown if used in a run.Group environment.
-func (h *Handler) Serve() error {
+func (h *Handler) ServeContext(ctx context.Context) error {
 	for {
 		select {
 		case sig := <-h.signal:
@@ -78,17 +79,12 @@ func (h *Handler) Serve() error {
 			case syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTERM:
 				return fmt.Errorf("%s %w", sig, run.ErrRequestedShutdown)
 			}
-		case <-h.cancel:
+		case <-ctx.Done():
 			signal.Stop(h.signal)
 			close(h.signal)
 			return nil
 		}
 	}
-}
-
-// GracefulStop implements run.GroupService and will close the signal handler.
-func (h *Handler) GracefulStop() {
-	close(h.cancel)
 }
 
 // sendHUP is for test purposes
