@@ -640,24 +640,26 @@ func (g *Group) Run(args ...string) (err error) {
 	// run each Service
 	for idx, svc := range s {
 		go func(itemNr int, svc Service) {
+			var err error
 			l := g.Logger.With(
 				"name", svc.Name(),
 				"item", fmt.Sprintf("(%d/%d)", itemNr, len(s)))
 			l.Debug("serve")
 			defer l.Debug("serve-exit", debugLogError(err)...)
-			err := svc.Serve()
+			err = svc.Serve()
 			errs <- err
 		}(idx+1, svc)
 	}
 	// run each ServiceContext
 	for idx, svc := range x {
 		go func(itemNr int, svc ServiceContext) {
+			var err error
 			l := g.Logger.With(
 				"name", svc.Name(),
 				"item", fmt.Sprintf("(%d/%d)", itemNr, len(x)))
 			l.Debug("serve-context")
 			defer l.Debug("serve-context-exit", debugLogError(err)...)
-			err := svc.ServeContext(ctx)
+			err = svc.ServeContext(ctx)
 			errs <- err
 		}(idx+1, svc)
 	}
